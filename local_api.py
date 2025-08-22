@@ -1,17 +1,16 @@
-import json
-
 import requests
 
-# TODO: send a GET using the URL http://127.0.0.1:8000
-r = None # Your code here
+BASE_URL = "http://127.0.0.1:8000"
 
-# TODO: print the status code
-# print()
-# TODO: print the welcome message
-# print()
+# --- GET ---
+r = requests.get(f"{BASE_URL}/", timeout=10)
+print("Status Code:", r.status_code)
+try:
+    print("Result:", r.json().get("message"))
+except Exception:
+    print("Result (raw):", r.text)
 
-
-
+# --- POST ---
 data = {
     "age": 37,
     "workclass": "Private",
@@ -29,10 +28,11 @@ data = {
     "native-country": "United-States",
 }
 
-# TODO: send a POST using the data above
-r = None # Your code here
-
-# TODO: print the status code
-# print()
-# TODO: print the result
-# print()
+r = requests.post(f"{BASE_URL}/data/", json=data, timeout=10)
+print("Status Code:", r.status_code)
+try:
+    payload = r.json()
+    # expected: {"result": "<=50K"} or {">50K"}
+    print("Result:", payload["result"] if isinstance(payload, dict) and "result" in payload else payload)
+except Exception:
+    print("Result (raw):", r.text)

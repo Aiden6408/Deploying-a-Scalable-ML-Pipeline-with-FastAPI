@@ -1,4 +1,6 @@
 import os
+from pathlib import Path
+import numpy as np
 import pandas as pd
 from fastapi import FastAPI
 from pydantic import BaseModel, Field
@@ -6,16 +8,16 @@ from pydantic import BaseModel, Field
 from ml.data import apply_label, process_data
 from ml.model import inference, load_model
 
-# DO NOT MODIFY
+# ---------------------------
+# Pydantic request schema
+# ---------------------------
 class Data(BaseModel):
     age: int = Field(..., example=37)
     workclass: str = Field(..., example="Private")
     fnlgt: int = Field(..., example=178356)
     education: str = Field(..., example="HS-grad")
     education_num: int = Field(..., example=10, alias="education-num")
-    marital_status: str = Field(
-        ..., example="Married-civ-spouse", alias="marital-status"
-    )
+    marital_status: str = Field(..., example="Married-civ-spouse", alias="marital-status")
     occupation: str = Field(..., example="Prof-specialty")
     relationship: str = Field(..., example="Husband")
     race: str = Field(..., example="White")
@@ -25,30 +27,31 @@ class Data(BaseModel):
     hours_per_week: int = Field(..., example=40, alias="hours-per-week")
     native_country: str = Field(..., example="United-States", alias="native-country")
 
-# ---- paths to serialized artifacts (adjust if you saved them elsewhere) ----
-encoder_path = "model/encoder.pkl"   # TODO: update if your path differs
-encoder = load_model(encoder_path)
+# ---------------------------
+# Load serialized artifacts
+# ---------------------------
+ROOT = Path(__file__).resolve().parent
+encoder_path = ROOT / "model" / "encoder.pkl"
+model_path   = ROOT / "model" / "model.pkl"
 
-model_path = "model/model.pkl"       # TODO: update if your path differs
-model = load_model(model_path)
+encoder = load_model(str(encoder_path))
+model   = load_model(str(model_path))
 
-# ---- FastAPI app ----
+# ---------------------------
+# FastAPI app
+# ---------------------------
 app = FastAPI(title="Census Income Inference API")
 
-# ---- Root GET ----
 @app.get("/")
 async def get_root():
-    """Say hello!"""
     return {"message": "Welcome to the Census Income inference API."}
 
-# ---- Inference POST ----
 @app.post("/data/")
 async def post_inference(data: Data):
-    # DO NOT MODIFY: turn the Pydantic model into a dict.
+    # to dict, convert aliases with hyphens back to column names
     data_dict = data.dict()
-    # DO NOT MODIFY: clean up the dict to turn it into a Pandas DataFrame.
-    data = {k.replace("_", "-"): [v] for k, v in data_dict.items()}
-    data = pd.DataFrame.from_dict(data)
+    row = {k.replace("_", "-"): [v] for k, v in data_dict.items()}
+    df = pd.DataFrame.from_dict(row)
 
     cat_features = [
         "workclass",
@@ -61,9 +64,8 @@ async def post_inference(data: Data):
         "native-country",
     ]
 
-    # preprocess with the provided function
     X, _, _, _ = process_data(
-        data,
+        df,
         categorical_features=cat_features,
         label=None,
         training=False,
@@ -71,10 +73,13 @@ async def post_inference(data: Data):
         lb=None,
     )
 
-    # model inference
     preds = inference(model, X)
+    labeled = apply_label(preds)  # could be a scalar string or 1D array/series
 
-    # map numeric prediction to label string
-    labeled = apply_label(preds)
-    # return the first (and only) prediction for this single-row request
-    return {"result": labeled[0] if hasattr(labeled, "__len__") else labeled}
+    # robustly extract the single prediction value
+    if isinstance(labeled, (list, tuple, np.ndarray, pd.Series)):
+        value = str(labeled[0])
+    else:
+        value = str(labeled)
+
+    return {"result": value}
